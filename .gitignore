@@ -1,0 +1,4 @@
+**/node_modules/*
+server/screenshot.png
+server/result.html
+server/frame-*.png
