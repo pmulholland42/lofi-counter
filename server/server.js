@@ -1,78 +1,105 @@
-const CDP = require("chrome-remote-interface");
+const puppeteer = require("puppeteer");
 const fs = require("fs");
+const looksSame = require("looks-same");
 
-CDP(async (client) => {
-  // Extract used DevTools domains.
-  const { Page, Runtime } = client;
+const lofiURL = "https://www.youtube.com/watch?v=5qap5aO4i9A";
 
-  // Enable events on domains we are interested in.
-  await Page.enable();
-  await Page.navigate({
-    url: "https://www.youtube.com/watch?v=5qap5aO4i9A",
-  });
-  await Page.loadEventFired();
-  /*await new Promise((resolve) => {
-    setTimeout(resolve, 3500);
-  });*/
-
-  const clickTheVideo1 = `
-    let videoElements = document.getElementsByTagName('video');
-    let stringElements = document.getElementsByTagName('yt-formatted-string');
-    videoElements[0].click();
-    [...stringElements].forEach(stringElement => stringElement.innerText = "butt");
-    Array.prototype.map.call(videoElements, video => video.outerHTML);
-  `;
-  const clickTheVideo2 = `
-    videoElements = document.getElementsByTagName('video');
-    stringElements = document.getElementsByTagName('yt-formatted-string');
-    videoElements[0].click();
-    [...stringElements].forEach(stringElement => stringElement.innerText = "butt");
-    Array.prototype.map.call(videoElements, video => video.outerHTML);
-  `;
-
-  await Runtime.evaluate({
-    expression: clickTheVideo1,
-  });
-
-  await Page.startScreencast({ format: "png", everyNthFrame: 1 });
-  let counter = 0;
-  let now = new Date();
-  let then = new Date();
-  while (counter < 1000) {
-    now = new Date();
-    //console.log(now.getTime() - then.getTime());
-    then = new Date();
-    const { data, metadata, sessionId } = await Page.screencastFrame();
-    let filePromise = new Promise((resolve, reject) => {
-      fs.writeFile(
-        `frame-${counter}.png`,
-        Buffer.from(data, "base64"),
-        resolve
-      );
+(async () => {
+  let flipFrameBuffers = [];
+  for (let i = 0; i < 5; i++) {
+    let flipFrame = fs.readFileSync(`flip-frame-${i + 1}.png`, {
+      encoding: "base64",
     });
-    //console.log(metadata);
-    let frameAckPromise = Page.screencastFrameAck({ sessionId: sessionId });
-    await Promise.all([filePromise, frameAckPromise]);
-    if (counter > 10) {
-      let result = await Runtime.evaluate({
-        expression: clickTheVideo2,
-      });
-      console.log(result);
-    }
-    counter++;
+    flipFrameBuffers.push(Buffer.from(flipFrame, "base64"));
   }
-  /*Page.screencastFrame((image) => {
-    const { data, metadata } = image;
-    console.log(metadata);
-  });*/
 
-  /*await new Promise((resolve) => {
+  const browser = await puppeteer.launch({
+    executablePath:
+      "C:\\Users\\pmulh\\AppData\\Local\\Chromium\\Application\\chrome.exe",
+  });
+  const page = await browser.newPage();
+  await page.goto(lofiURL);
+  await new Promise((resolve) => {
     setTimeout(resolve, 3500);
   });
-  let screenshot = await Page.captureScreenshot();
-  console.log("took screenshot");
-  fs.writeFileSync("screenshot.png", Buffer.from(screenshot.data, "base64"));*/
-  client.close();
-}).on("error", (err) => {
-  console.error("Cannot connect to browser:", err);
-});
+
+  // Click the video to start playing
+  await page.evaluate(() => {
+    let videoElements = document.getElementsByTagName("video");
+    videoElements[0].click();
+    return Promise.resolve();
+  });
+  await new Promise((resolve) => {
+    setTimeout(resolve, 2000);
+  });
+
+  let lastFlipTime = new Date();
+  for (let i = 0; i < 1000; i++) {
+    let screenshot = await page.screenshot({
+      encoding: "binary",
+      clip: {
+        x: 218,
+        y: 363,
+        width: 129,
+        height: 57,
+      },
+    });
+    let currentFrameBuffer = Buffer.from(screenshot, "binary");
+
+    flipFrameBuffers.forEach(async (frame, index) => {
+      let equal = await new Promise((resolve, reject) => {
+        looksSame(
+          frame,
+          currentFrameBuffer,
+          { tolerance: 50 },
+          (error, { equal }) => {
+            resolve(equal);
+          }
+        );
+      });
+      if (equal) {
+        console.log(
+          `flips plus plus!!!  (${
+            (new Date().getTime() - lastFlipTime.getTime()) / 1000
+          } seconds)`
+        );
+        lastFlipTime = new Date();
+      }
+    });
+
+    /*let filePromise = new Promise((resolve, reject) => {
+      fs.writeFile(`frame-${i}.png`, currentFrameBuffer, resolve);
+    });*/
+
+    // Skip ads, decline YT Premium, etc.
+    await page.evaluate(() => {
+      let skipAdButtons = document.getElementsByClassName(
+        "ytp-ad-text ytp-ad-skip-button-text"
+      );
+      let noThanksButton = [
+        ...document.getElementsByTagName("yt-formatted-string"),
+      ].find(
+        (button) =>
+          button.innerHTML.includes("Skip trial") ||
+          button.innerHTML.includes("No thanks")
+      );
+
+      if (noThanksButton) {
+        noThanksButton.click();
+      }
+
+      if (skipAdButtons.length > 0) {
+        [...skipAdButtons].forEach((button) => {
+          button.click();
+        });
+      }
+      return Promise.resolve();
+    });
+
+    await new Promise((resolve) => {
+      setTimeout(resolve, 67); // 15 fps
+    });
+  }
+
+  await browser.close();
+})();
