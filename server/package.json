@@ -1,0 +1,21 @@
+{
+  "name": "lofi-counter-server",
+  "version": "1.0.0",
+  "description": "...",
+  "main": "server.js",
+  "dependencies": {
+    "chrome-remote-interface": "^0.30.0",
+    "express": "^4.17.1",
+    "fs": "^0.0.1-security",
+    "looks-same": "^7.3.0",
+    "puppeteer": "^9.1.1"
+  },
+  "devDependencies": {},
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node server.js"
+  },
+  "author": "",
+  "license": "ISC",
+  "type": "module"
+}
