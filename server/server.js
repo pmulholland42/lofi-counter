@@ -8,13 +8,21 @@ const chromeExePath =
   "C:\\Users\\pmulh\\AppData\\Local\\Chromium\\Application\\chrome.exe";
 const port = 3000;
 
-let lastFlipTime = new Date();
+let lastPageFlip = new Date();
 let latency = 0;
 
 // Set up api
 const app = express();
+app.use(function (req, res, next) {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  res.setHeader("Access-Control-Allow-Credentials", true);
+  next();
+});
 app.get("/sync", (req, res) => {
-  res.send({ lastFlipTime, latency });
+  console.log("Got request");
+  res.send({ lastPageFlip, latency });
 });
 app.listen(port, () => {
   console.log(`Listening at http://localhost:${port}`);
@@ -171,11 +179,11 @@ while (true) {
 
     if (equal) {
       console.log(
-        `flips plus plus!!!  (${
-          (new Date().getTime() - lastFlipTime.getTime()) / 1000
+        `Page flip!  (${
+          (new Date().getTime() - lastPageFlip.getTime()) / 1000
         } seconds)`
       );
-      lastFlipTime = new Date();
+      lastPageFlip = new Date();
       break;
     }
   }
@@ -191,13 +199,12 @@ while (true) {
         (child) => child.tagName === "span"
       );
       if (siblingSpan) {
-        return Promise.resolve(siblingSpan.lastChild.innerText);
-      } else {
-        return Promise.resolve("no sibling span");
+        return Promise.resolve(
+          Number.parseFloat(siblingSpan.lastChild.innerText)
+        );
       }
-    } else {
-      return Promise.resolve("no latency div");
     }
+    return Promise.resolve(0);
   });
   //console.log(latency);
 
