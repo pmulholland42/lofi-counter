@@ -7,7 +7,7 @@
     <title>How Many Pages Has Lofi Girl Written?</title>
   </head>
 
-  <body>
+  <body style="margin: 0px; background-color: #774f69">
     <div
       style="
         display: flex;
@@ -16,11 +16,27 @@
         flex-direction: column;
       "
     >
-      <div id="count" style="padding: 10px; font-size: 2em">
+      <div
+        id="count"
+        style="
+          margin: 20px;
+          font-size: 2em;
+          font-family: Verdana, Geneva, Tahoma, sans-serif;
+          color: white;
+          -webkit-text-fill-color: white;
+          -webkit-text-stroke-width: 1px;
+          -webkit-text-stroke-color: black;
+          font-size: 3em;
+        "
+        class="odometer"
+      >
         This page requires javascript enabled to function
       </div>
       <div id="player"></div>
     </div>
   </body>
+  <script src="https://www.youtube.com/iframe_api"></script>
   <script src="counter.js"></script>
+  <link rel="stylesheet" href="odometer-theme-minimal.css" />
+  <script src="odometer.min.js"></script>
 </html>

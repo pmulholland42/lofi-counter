@@ -3,13 +3,15 @@ import * as fs from "fs";
 import looksSame from "looks-same";
 import express from "express";
 
-const lofiURL = "https://www.youtube.com/watch?v=5qap5aO4i9A";
+const lofiURL = "http://localhost:8000/"; //"https://www.youtube.com/watch?v=5qap5aO4i9A";
 const chromeExePath =
   "C:\\Users\\pmulh\\AppData\\Local\\Chromium\\Application\\chrome.exe";
 const port = 3000;
+const originalStreamPageCount = 2402444;
+const pageFlipTime = 19800; //19728;
 
-let lastPageFlip = new Date();
-let latency = 0;
+let lastPageFlip = 0;
+let pageCount = -1;
 
 // Set up api
 const app = express();
@@ -22,7 +24,7 @@ app.use(function (req, res, next) {
 });
 app.get("/sync", (req, res) => {
   console.log("Got request");
-  res.send({ lastPageFlip, latency });
+  res.send({ lastPageFlip, pageCount });
 });
 app.listen(port, () => {
   console.log(`Listening at http://localhost:${port}`);
@@ -31,7 +33,7 @@ app.listen(port, () => {
 // Read in the frames of lofi girl flipping the page
 let flipFrameBuffers = [];
 for (let i = 0; i < 5; i++) {
-  let flipFrame = fs.readFileSync(`flip-frame-${i + 1}.png`, {
+  let flipFrame = fs.readFileSync(`flip-frames/${i + 1}.png`, {
     encoding: "base64",
   });
   flipFrameBuffers.push(Buffer.from(flipFrame, "base64"));
@@ -62,103 +64,24 @@ await new Promise((resolve) => {
   setTimeout(resolve, 3500);
 });
 
-// Click the video to start playing
+// Start the video playing
 await page.evaluate(() => {
-  let videoElements = document.getElementsByTagName("video");
-  videoElements[0].click();
+  player.playVideo();
   return Promise.resolve();
 });
 
-// Skip ads, decline YT Premium, etc.
-await page.evaluate(() => {
-  let skipAdButtons = document.getElementsByClassName(
-    "ytp-ad-text ytp-ad-skip-button-text"
-  );
-  let declineButtons = [
-    ...document.getElementsByTagName("yt-formatted-string"),
-  ].filter(
-    (button) =>
-      button.innerHTML.includes("Skip trial") ||
-      button.innerHTML.includes("No thanks")
-  );
-
-  if (declineButtons.length > 0) {
-    declineButtons.forEach((button) => button.click());
-  }
-
-  if (skipAdButtons.length > 0) {
-    [...skipAdButtons].forEach((button) => {
-      button.click();
-    });
-  }
-  return Promise.resolve();
-});
-
-// Open stats for nerds so we can read the latency value
-// TODO: get left click working
-let resultt = await page.evaluate(() => {
-  // Right click video
-  let videoElement = document.getElementsByTagName("video")[0];
-
-  var ev1 = new MouseEvent("mousedown", {
-    bubbles: true,
-    cancelable: false,
-    view: window,
-    button: 1,
-    buttons: 2,
-    clientX: videoElement.getBoundingClientRect().x,
-    clientY: videoElement.getBoundingClientRect().y,
-  });
-  videoElement.dispatchEvent(ev1);
-  var ev2 = new MouseEvent("mouseup", {
-    bubbles: true,
-    cancelable: false,
-    view: window,
-    button: 1,
-    buttons: 0,
-    clientX: videoElement.getBoundingClientRect().x,
-    clientY: videoElement.getBoundingClientRect().y,
-  });
-  videoElement.dispatchEvent(ev2);
-  var ev3 = new MouseEvent("contextmenu", {
-    bubbles: true,
-    cancelable: false,
-    view: window,
-    button: 1,
-    buttons: 0,
-    clientX: videoElement.getBoundingClientRect().x,
-    clientY: videoElement.getBoundingClientRect().y,
-  });
-  videoElement.dispatchEvent(ev3);
-  //videoElements[0].dispatchEvent(new CustomEvent("contextmenu"));
-
-  // Click stats for nerds
-  let statsForNerdsButton = [
-    ...document.getElementsByClassName("ytp-menuitem-label"),
-  ].find((element) => {
-    element.innerText.includes("Stats for nerds");
-  });
-
-  if (statsForNerdsButton) {
-    statsForNerdsButton.click();
-  } else {
-    return Promise.resolve("no statsForNerdsButton?");
-  }
-
-  return Promise.resolve("clicked?");
-});
-
-//console.log(resultt);
-
+let rollingAvgSum = 0;
+let rollingAvgCount = 0;
+let i = 0;
 while (true) {
   // Screenshot the part of the stream with the notebook
   let screenshot = await page.screenshot({
     encoding: "base64",
     clip: {
-      x: 218,
-      y: 363,
-      width: 129,
-      height: 57,
+      x: 194,
+      y: 414,
+      width: 179,
+      height: 69,
     },
   });
   let currentFrameBuffer = Buffer.from(screenshot, "base64");
@@ -178,43 +101,39 @@ while (true) {
     });
 
     if (equal) {
-      console.log(
-        `Page flip!  (${
-          (new Date().getTime() - lastPageFlip.getTime()) / 1000
-        } seconds)`
-      );
-      lastPageFlip = new Date();
+      // Get the current livestream time
+      let prevLastPageFlipTime = lastPageFlip;
+      lastPageFlip = await page.evaluate(() => {
+        return Promise.resolve(player.getCurrentTime());
+      });
+
+      let time = lastPageFlip - prevLastPageFlipTime;
+      if (pageCount === -1) {
+        pageCount = Math.floor(
+          (lastPageFlip * 1000) / pageFlipTime + originalStreamPageCount
+        );
+      } else if (time > 2) {
+        pageCount++;
+      }
+
+      if (time > 17 && time < 25) {
+        rollingAvgSum += time;
+        rollingAvgCount++;
+        console.log("new rolling avg: " + rollingAvgSum / rollingAvgCount);
+      }
+      console.log(lastPageFlip);
       break;
     }
   }
 
-  // Read the stream latency value from the DOM
-  latency = await page.evaluate(() => {
-    let latencyDiv = [...document.getElementsByTagName("div")].find((div) =>
-      div.innerText.includes("Live Latency")
-    );
-
-    if (latencyDiv) {
-      let siblingSpan = [...latencyDiv.parentElement.children].find(
-        (child) => child.tagName === "span"
-      );
-      if (siblingSpan) {
-        return Promise.resolve(
-          Number.parseFloat(siblingSpan.lastChild.innerText)
-        );
-      }
-    }
-    return Promise.resolve(0);
-  });
-  //console.log(latency);
-
   // Write the screenshot to disk (for testing purposes)
   /*let filePromise = new Promise((resolve, reject) => {
-      fs.writeFile(`frame-${i}.png`, currentFrameBuffer, resolve);
-    });*/
+    fs.writeFile(`frame-${i}.png`, currentFrameBuffer, resolve);
+  });*/
 
   // Wait for the next frame, in case the server is actually fast enough to screenshot every frame
   await new Promise((resolve) => {
     setTimeout(resolve, 67); // 15 fps
   });
+  i++;
 }
